@@ -5,27 +5,8 @@ app.use(cors());
 app.use(express.json())
 app.use(express.urlencoded({extended:true}))
 const connection = require('./db');
-  // app.get('/products',(req,res)=>{
-  //   connection.query('SELECT *  FROM products;',(err,data)=>{
-  //     if(!err){
-  //       res.status(200).json(data)
-  //     }else{
-  //       res.status(404).json('error')
-  //       console.log('erorr')
-  //     }
-  //   })
-  // })
-  // app.get('/categories',(req,res)=>{
-  //   connection.query('SELECT * FROM categories',(err,data)=>{
-  //     if(!err){
-  //       res.status(200).json(data)
-  //     }else{
-  //       res.status(404).json('error')
-  //       console.log('erorr')
-  //     }
-  //   })
-  // })
-  
+
+// Lazy load endpoint
 app.get('/products', (req, res) => {
   const limit  = parseInt(req.query.limit)  || 20;
   const offset = parseInt(req.query.offset) || 0;
@@ -50,6 +31,7 @@ app.get('/products', (req, res) => {
     });
   });
 });
+// Product details endpoint
 app.get('/product/:id', (req, res) => {
   const productId = req.params.id;
 
@@ -110,6 +92,7 @@ app.get('/product/:id', (req, res) => {
     });
   });
 });
+// Categories endpoint  
 app.get('/categories', (req, res) => {
   const sql = `
     SELECT id, name
@@ -128,11 +111,51 @@ app.get('/categories', (req, res) => {
     });
   });
 });
+// Products by category endpoint
+app.get('/products/category/:id', (req, res) => {
+  const categoryId = req.params.id;
+  const limit = parseInt(req.query.limit) || 20;
+  const offset = parseInt(req.query.offset) || 0;
+
+  const sql = `
+    SELECT 
+      p.id,
+      p.title,
+      p.price,
+      p.thumbnail,
+      p.rating,
+      p.category_id,
+      c.name AS category_name
+    FROM products p
+    LEFT JOIN categories c ON p.category_id = c.id
+    WHERE p.category_id = ?
+    ORDER BY p.id ASC
+    LIMIT ? OFFSET ?
+  `;
+
+  connection.query(sql, [categoryId, limit, offset], (err, rows) => {
+    if (err) {
+      console.error("Category products error:", err);
+      return res.status(500).json({ error: "Internal Server Error" });
+    }
+
+    res.json({
+      category_id: categoryId,
+      count: rows.length,
+      data: rows,
+      nextOffset: offset + limit
+    });
+  });
+});
+// Search endpoint
 app.get('/search', (req, res) => {
   const q = req.query.q;
 
   if (!q || q.trim() === "") {
-    return res.json({ data: [] });
+    return res.json({
+      query: "",
+      results: []
+    });
   }
 
   const keyword = `%${q}%`;
@@ -153,11 +176,12 @@ app.get('/search', (req, res) => {
       p.title LIKE ?
       OR p.description LIKE ?
       OR p.brand LIKE ?
+      OR c.name LIKE ?              
     ORDER BY p.id DESC
-    LIMIT 100
+    LIMIT 200
   `;
 
-  connection.query(sql, [keyword, keyword, keyword], (err, rows) => {
+  connection.query(sql, [keyword, keyword, keyword, keyword], (err, rows) => {
     if (err) {
       console.error("Search error:", err);
       return res.status(500).json({ error: "Internal Server Error" });
@@ -169,6 +193,7 @@ app.get('/search', (req, res) => {
     });
   });
 });
+// Sort endpoint
 app.get('/products/sort', (req, res) => {
   const sortBy = req.query.by;
   const limit  = parseInt(req.query.limit)  || 20;
@@ -223,8 +248,150 @@ app.get('/products/sort', (req, res) => {
     });
   });
 });
+// Login endpoint
+app.post('/login', (req, res) => {
+  const { email, password } = req.body;
 
+  const sql = `SELECT * FROM users WHERE email = ? LIMIT 1`;
 
+  connection.query(sql, [email], (err, rows) => {
+    if (err) return res.status(500).json({ error: "DB error" });
+
+    if (rows.length === 0) {
+      return res.status(400).json({ error: "User not found" });
+    }
+
+    const user = rows[0];
+
+    if (password !== user.password) {
+      return res.status(400).json({ error: "Wrong password" });
+    }
+
+    res.json({
+      message: "Login success",
+      user,
+      token: "fake-jwt-token-" + user.id
+    });
+  });
+});
+// add user endpoint
+app.post('/adduser', (req, res) => {
+  const { username, email, password, phone } = req.body;
+
+  if (!username || !email || !password) {
+    return res.status(400).json({ error: "username, email və password tələb olunur" });
+  }
+
+  // 👉 İstifadəçinin rolu dəyişdirilə bilməz
+  const role = "user";
+
+  // 1) Email mövcuddurmu?
+  const checkSql = `SELECT * FROM users WHERE email = ?`;
+
+  connection.query(checkSql, [email], (err, rows) => {
+    if (err) {
+      console.error("Email check error:", err);
+      return res.status(500).json({ error: "Internal Server Error" });
+    }
+
+    if (rows.length > 0) {
+      return res.status(400).json({ error: "Bu email artıq istifadə olunur" });
+    }
+
+    // 2) Şifrə TEXT olaraq yazılır
+    const insertSql = `
+      INSERT INTO users (username, email, password, phone, role)
+      VALUES (?, ?, ?, ?, ?)
+    `;
+
+    connection.query(
+      insertSql,
+      [username, email, password, phone, role],
+      (err, result) => {
+        if (err) {
+          console.error("Add user insert error:", err);
+          return res.status(500).json({ error: "Internal Server Error" });
+        }
+
+        res.json({
+          success: true,
+          message: "User uğurla əlavə edildi",
+          userId: result.insertId,
+          assignedRole: role
+        });
+      }
+    );
+  });
+});
+// Add to basket endpoint
+app.post('/basket/add', (req, res) => {
+  const { user_id, product_id, quantity } = req.body;
+
+  if (!user_id || !product_id) {
+    return res.status(400).json({ error: "user_id və product_id tələb olunur" });
+  }
+
+  const qty = quantity || 1;
+
+  // Əvvəl baxırıq bu məhsul istifadəçinin səbətində VARMI?
+  const checkSql = `
+    SELECT id, quantity
+    FROM basket_items
+    WHERE user_id = ? AND product_id = ?
+  `;
+
+  connection.query(checkSql, [user_id, product_id], (err, rows) => {
+    if (err) {
+      console.error("Check basket error:", err);
+      return res.status(500).json({ error: "Internal Server Error" });
+    }
+
+    // Məhsul artıq səbətdə varsa → quantity artırırıq
+    if (rows.length > 0) {
+      const item = rows[0];
+      const newQty = item.quantity + qty;
+
+      const updateSql = `
+        UPDATE basket_items
+        SET quantity = ?
+        WHERE id = ?
+      `;
+
+      return connection.query(updateSql, [newQty, item.id], (err2) => {
+        if (err2) {
+          console.error("Update basket error:", err2);
+          return res.status(500).json({ error: "Internal Server Error" });
+        }
+
+        return res.json({
+          message: "Məhsul səbətdə idi → miqdar artırıldı",
+          quantity: newQty
+        });
+      });
+    }
+
+    // Məhsul səbətdə yoxdursa → yeni əlavə edilir
+    const insertSql = `
+      INSERT INTO basket_items (user_id, product_id, quantity)
+      VALUES (?, ?, ?)
+    `;
+
+    connection.query(insertSql, [user_id, product_id, qty], (err3, result) => {
+      if (err3) {
+        console.error("Add basket error:", err3);
+        return res.status(500).json({ error: "Internal Server Error" });
+      }
+
+      res.json({
+        message: "Məhsul səbətə əlavə edildi",
+        basket_item_id: result.insertId,
+        quantity: qty
+      });
+    });
+  });
+});
+
+// Server başlatma
   app.listen(2000, (err) => {
     if (!err) {
         console.log('Server is going on')
