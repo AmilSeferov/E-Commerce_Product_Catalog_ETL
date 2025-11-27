@@ -1,20 +1,24 @@
 import './App.css'
-import Nav from './components/nav'
-import Hero from './components/hero'
-import Filter from './components/filter'
-import Product from './components/product'
-import Footer from './components/footer'
+import Home from './home'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import ProductDetail from './components/ProductDetail'
+import LoginPage from './components/LoginPage'
+import Register_Page from './components/Register_Page'
+import CartPage from './components/CartPage'
 function App() {
 
   return (
     <>
-<div className="min-h-screen bg-green-50 font-sans space-y-10">
-  <Nav/>
-  <Hero/>
-  <Filter/>
-  <Product/>
-  <Footer/> 
-</div>
+<BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/product/:id" element={<ProductDetail />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/search/:query" element={< Home />} />
+        <Route path="/register" element={< Register_Page />} />
+        <Route path="/cart" element={< CartPage />} />
+      </Routes>
+    </BrowserRouter>
     </>
   )
   
