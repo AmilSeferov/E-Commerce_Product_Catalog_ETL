@@ -4,8 +4,11 @@ const db = require("./db");
 
 function syncCategories(callback) {
   // 1) API-dən kateqoriyaları al
+
+
+
   axios.get("https://dummyjson.com/products/categories")
-    .then(response => {
+  .then(response => {
       const categories = response.data;
       categories.forEach(cat => {
         console.log(cat.name);
@@ -47,7 +50,7 @@ function syncCategories(callback) {
 
 
   // 2) Məhsulları API-dən al və sinxronizasiya et
-  axios.get("https://dummyjson.com/products?limit=200")
+  axios.get("https://dummyjson.com/products?limit=0")
     .then(response => {
       const products = response.data.products;
 
@@ -83,7 +86,8 @@ function syncCategories(callback) {
                 // 2.3) INSERT product
                 db.query(
                   `INSERT INTO products 
-                  (id, title, description, category_id, price, discountPercentage, rating, stock, brand, weight, warrantyInformation, createdAt, updatedAt, thumbnail)
+                  (id, title, description, category_id, price, discountPercentage, rating, stock, brand,
+                   weight, warrantyInformation, createdAt, updatedAt, thumbnail)
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                   [
                     product.id,
@@ -168,6 +172,5 @@ function syncCategories(callback) {
     });
 
 }
-// Sinxronizasiyanı işə sal
-syncCategories();
+
 module.exports = { syncCategories };

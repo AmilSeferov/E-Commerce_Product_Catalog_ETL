@@ -1,6 +1,8 @@
 const express= require('express');
 const cors= require('cors')
 const app=express();
+const cron = require("node-cron");
+const { syncCategories } = require("./etl"); 
 app.use(cors());
 app.use(express.json())
 app.use(express.urlencoded({extended:true}))
@@ -12,7 +14,7 @@ app.get('/products', (req, res) => {
   const offset = parseInt(req.query.offset) || 0;
 
   const sql = `
-    SELECT id, title, price, thumbnail, rating
+    SELECT id, title, price, thumbnail, rating,discountPercentage
     FROM products
     ORDER BY id
     LIMIT ? OFFSET ?
@@ -125,6 +127,7 @@ app.get('/products/category/:id', (req, res) => {
       p.thumbnail,
       p.rating,
       p.category_id,
+      p.discountPercentage,
       c.name AS category_name
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
@@ -169,6 +172,7 @@ app.get('/search', (req, res) => {
       p.rating,
       p.brand,
       p.category_id,
+      p.discountPercentage,
       c.name AS category_name
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
@@ -388,6 +392,72 @@ app.post('/basket/add', (req, res) => {
         quantity: qty
       });
     });
+  });
+});
+// Add to favorites endpoint
+app.post("/favorites/add", (req, res) => {
+  const { user_id, product_id } = req.body;
+
+  const sql = `
+    INSERT INTO favorites (user_id, product_id)
+    VALUES (?, ?)
+    ON DUPLICATE KEY UPDATE user_id = user_id
+  `;
+
+  connection.query(sql, [user_id, product_id], (err) => {
+    if (err) return res.status(500).json({ error: "DB error", details: err });
+
+    res.json({ message: "Favoritə əlavə olundu" });
+  });
+});
+// Remove from favorites endpoint
+app.delete("/favorites/remove", (req, res) => {
+  const { user_id, product_id } = req.body;
+
+  const sql = `DELETE FROM favorites WHERE user_id = ? AND product_id = ?`;
+
+  connection.query(sql, [user_id, product_id], (err) => {
+    if (err) return res.status(500).json({ error: "DB error", details: err });
+
+    res.json({ message: "Favoritdən çıxarıldı" });
+  });
+});
+// Check favorite endpoint
+app.get("/favorites/check/:userId/:productId", (req, res) => {
+  const { userId, productId } = req.params;
+
+  const sql = `SELECT * FROM favorites WHERE user_id = ? AND product_id = ?`;
+
+  connection.query(sql, [userId, productId], (err, rows) => {
+    if (err) return res.status(500).json({ error: "DB error" });
+
+    res.json({ isFavorite: rows.length > 0 });
+  });
+});
+// Get user's favorites endpoint
+app.get("/favorites/:userId", (req, res) => {
+  const { userId } = req.params;
+
+  const sql = `
+    SELECT products.*
+    FROM favorites
+    JOIN products ON favorites.product_id = products.id
+    WHERE favorites.user_id = ?
+  `;
+
+  connection.query(sql, [userId], (err, rows) => {
+    if (err) return res.status(500).json({ error: err });
+    res.json({ favorites: rows });
+  });
+});
+
+
+
+// Hər 1 saatdan bir işləsin
+cron.schedule("0 * * * *", () => {
+  console.log("⏳ ETL başladı (CRON)...");
+  syncCategories(() => {
+    console.log("✔ ETL tamamlandı");
   });
 });
 
